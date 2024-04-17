@@ -1,0 +1,6 @@
+[submodule "tests/von"]
+	path = tests/von
+	url = git@github.com:vercas/vON.git
+[submodule "tests/json"]
+	path = tests/json
+	url = git@github.com:rxi/json.lua.git
