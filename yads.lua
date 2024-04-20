@@ -16,20 +16,11 @@ You should have received a copy of the GNU General Public License
 along with this program. If not, see <https://www.gnu.org/licenses/>.
 ]]
 
-
 --> Config
 ---> Enable null-terminated string.
 ----> true (slower, compact)
 ----> false (faster, bulky) NOTE: Adds string length of the dword.
 local SZT = true
-
----> Enable IEEE754 like float.
-----> true (slower, compact) NOTE: 4 bytes
-----> false (faster, bulky) NOTE: 7 bytes
-local IEEE754 = true
-
----> Float encoding accuracy.
-local PRECISION, UNPRECISION = 1e7, 1e-7
 
 --> Types
 ---> nil, none, null and etc...
@@ -42,19 +33,21 @@ local TYPE_BYTE = 3
 local TYPE_SHORT = 4
 local TYPE_INT = 5
 local TYPE_LONG = 6
-local TYPE_NUM = 7
+local TYPE_FLT = 7
+local TYPE_DBL = 8
 ---> Negative numerical types
-local TYPE_NBYTE = 8
-local TYPE_NSHORT = 9
-local TYPE_NINT = 10
-local TYPE_NLONG = 11
-local TYPE_NNUM = 12
+local TYPE_NBYTE = 9
+local TYPE_NSHORT = 10
+local TYPE_NINT = 11
+local TYPE_NLONG = 12
+local TYPE_NFLT = 13
+local TYPE_NDBL = 14
 ---> String type
-local TYPE_STR = 13
+local TYPE_STR = 15
 ---> Complex types
-local TYPE_APART = 14 -- only indices
-local TYPE_HPART = 15 -- only keys
-local TYPE_TABLE = 16 -- both
+local TYPE_APART = 16 -- only indices
+local TYPE_HPART = 17 -- only keys
+local TYPE_TABLE = 18 -- both
 
 ---> DO NOT EDIT!!!
 local NEGOFFSET = TYPE_NBYTE - TYPE_BYTE
@@ -65,7 +58,7 @@ if (bit or bit32) then
 	local bit = bit or bit32
 	band, shl, shr = bit.band, bit.lshift, bit.rshift
 else
-	local loadop = function(op) return load(("local x, y = ... return x %s y"):format(op)) end
+	local loadop = function(op) return load(("local x, y = ... return x %s y"):format(op), "bitwise") end
 	band, shl, shr = loadop '&', loadop "<<", loadop ">>"
 end
 
@@ -74,41 +67,38 @@ local serial do
 	local buf = {}
 	local serials do
 		local abs, log = math.abs, math.log
-		local f32 do
-			if (IEEE754) then
-				local frexp do
-					if (jit) then
-						function frexp(x)
-							if (x == 0) then return 0.0, 0.0 end
-							local e = floor(log(abs(x), 2))
-							x = x / shl(1, e)
+		local frexp do
+			if (jit) then
+				function frexp(x)
+					if (x == 0) then return 0.0, 0.0 end
+					local e = floor(log(abs(x), 2))
+					x = x / shl(1, e)
 
-							if (abs(x) >= 1) then
-								x, e = x * .5, e + 1
-							end
-
-							return x, e
-						end
-					else
-						frexp = math.frexp
+					if (abs(x) >= 1) then
+						x, e = x * .5, e + 1
 					end
-				end
 
-				function f32(m)
-					local e
-					m, e = frexp(m)
-					m = ceil(m * PRECISION - .5) -- shl(m * PRECISION - .5, 0)
-					return char(band(m, 0xFF), band(shr(m, 8), 0xFF), band(shr(m, 16), 0xFF), e)
+					return x, e
 				end
 			else
-				function f32(x)
-					x, y = floor(x), floor((x % 1) * PRECISION + .5)
-					return char(
-						band(x, 0xFF), band(shr(x, 8), 0xFF), band(shr(x, 16), 0xFF), band(shr(x, 24), 0xFF),
-						band(y, 0xFF), band(shr(y, 8), 0xFF), band(shr(y, 16), 0xFF)
-					)
-				end
+				frexp = math.frexp
 			end
+		end
+
+		local function q2d(x)
+			return floor(x % 0x1p32), floor(x * 0x1p-32)
+		end
+
+		local function singlef(m, e)
+			return char(band(m, 0xFF), band(shr(m, 8), 0xFF), band(shr(m, 16), 0xFF), band(e, 0xFF))
+		end
+
+		local function doublef(m, e)
+			local lo, hi = q2d(m)
+			return char(
+				band(lo, 0xFF), band(shr(lo, 8), 0xFF), band(shr(lo, 16), 0xFF), band(shr(lo, 24), 0xFF),
+				band(hi, 0xFF), band(shr(hi, 8), 0xFF), band(e, 0xFF), band(shr(e, 8), 0xFF)
+			)
 		end
 
 		--> NOTE 1: This method hasn't been thoroughly tested and may produce undefined behavior!!!
@@ -129,21 +119,26 @@ local serial do
 			end
 
 			local function qword(x)
-				-- TODO
+				local lo, hi = q2d(x)
+				return char(
+					band(lo, 0xFF), band(shr(lo, 8), 0xFF), band(shr(lo, 16), 0xFF), band(shr(lo, 24), 0xFF),
+					band(hi, 0xFF), band(shr(hi, 8), 0xFF), band(shr(hi, 16), 0xFF), band(shr(hi, 24), 0xFF)
+				)
+			end
+
+			local function nope()
 				return '\0'
 			end
 
-			local lookat = {
-				[math.huge] = function() return '' end,
-				[-math.huge] = function() return '' end,
-				[00] = byte,	[08] = word,	[16] = dword,	[24] = dword,
-				[01] = byte,	[09] = word,	[17] = dword,	[25] = dword,
-				[02] = byte,	[10] = word,	[18] = dword,	[26] = dword,
-				[03] = byte,	[11] = word,	[19] = dword,	[27] = dword,
-				[04] = byte,	[12] = word,	[20] = dword,	[28] = dword,
-				[05] = byte,	[13] = word,	[21] = dword,	[29] = dword,
-				[06] = byte,	[14] = word,	[22] = dword,	[30] = dword,
-				[07] = byte,	[15] = word,	[23] = dword,	[31] = dword,
+			local lookat = setmetatable({
+				[00] = byte,	[01] = byte,	[02] = byte,	[03] = byte,
+				[04] = byte,	[05] = byte,	[06] = byte,	[07] = byte,
+				[08] = word,	[09] = word,	[10] = word,	[11] = word,
+				[12] = word,	[13] = word,	[14] = word,	[15] = word,
+				[16] = dword,	[17] = dword,	[18] = dword,	[19] = dword,
+				[20] = dword,	[21] = dword,	[22] = dword,	[23] = dword,
+				[24] = dword,	[25] = dword,	[26] = dword,	[27] = dword,
+				[28] = dword,	[29] = dword,	[30] = dword,	[31] = dword,
 				[32] = qword,	[33] = qword,	[34] = qword,	[35] = qword,
 				[36] = qword,	[37] = qword,	[38] = qword,	[39] = qword,
 				[40] = qword,	[41] = qword,	[42] = qword,	[43] = qword,
@@ -152,7 +147,11 @@ local serial do
 				[52] = qword,	[53] = qword,	[54] = qword,	[55] = qword,
 				[56] = qword,	[57] = qword,	[58] = qword,	[59] = qword,
 				[60] = qword,	[61] = qword,	[62] = qword,	[63] = qword
-			}
+			}, {
+				__index = function()
+					return nope
+				end
+			})
 
 			--> Index misses hurt performance!
 			lookup = setmetatable({
@@ -196,18 +195,27 @@ local serial do
 				return idx + 1
 			end,
 			["number"] = function(x, idx)
+				local y, tt = 0, 0
 				if (x % 1 == 0) then
-					local y = lookup[abs(x)]
-					local tt = ntypes[#y]
-					if (x < 0) then
-						tt = tt + NEGOFFSET
-					end
-
-					buf[idx] = char(tt)..y
+					y = lookup[abs(x)]
+					tt = ntypes[#y]
 				else
-					buf[idx] = char(x < 0 and TYPE_NNUM or TYPE_NUM)..f32(abs(x))
+					tt = TYPE_FLT
+					local m, e = frexp(abs(x))
+					y = m * 1e7
+					if (y % 1 == 0) then
+						y = singlef(y, e)
+					else
+						tt = tt + 1 --> TYPE_DBL or TYPE_NDBL
+						y = doublef(ceil(m * 1e14), e)
+					end
 				end
 
+				if (x < 0) then
+					tt = tt + NEGOFFSET
+				end
+
+				buf[idx] = char(tt)..y
 				return idx + 1
 			end,
 			["table"] = function(x, idx)
@@ -272,19 +280,35 @@ local deserial do
 	local deserials do
 		local sub, find = string.sub, string.find
 
-		-- bytes to dword
-		local function b2dw(ll, lh, hl, hh)
-			return ll + shl(lh, 8) + shl(hl, 16) + shl(hh, 24)
+		--> Utils
+		local b2w, b2dw, d2q do
+			--> bytes to word
+			function b2w(lo, hi)
+				return lo + shl(hi, 8)
+			end
+
+			--> bytes to dword
+			function b2dw(ll, lh, hl, hh)
+				return ll + shl(lh, 8) + shl(hl, 16) + shl(hh, 24)
+			end
+
+			--> dwords to qword
+			function d2q(lo, hi)
+				return (lo % 0x1p32) + (hi * 0x1p32)
+			end
 		end
 
-		local ldexp do
-			if (jit) then
-				function ldexp(m, e)
-					return m * shl(1, e)
-				end
-			else
-				ldexp = math.ldexp
-			end
+		local ldexp = math.ldexp
+		local function float(buf, idx)
+			local ll, m, e = byte(buf, idx, idx + 2)
+			m, e = b2dw(ll, m, e, 0), byte(buf, idx + 3, idx + 3)
+			return ldexp(m * 1e-7, e), 4
+		end
+
+		local function double(buf, idx)
+			local lo, hi, lhl, lhh, hll, hlh = byte(buf, idx, idx + 5)
+			lo, hi = b2dw(lo, hi, lhl, lhh), b2w(hll, hlh)
+			return ldexp(d2q(lo, hi) * 1e-14, b2w(byte(buf, idx + 6, idx + 7))), 8
 		end
 
 		deserials = {
@@ -301,45 +325,39 @@ local deserial do
 				return byte(buf, idx), 1
 			end,
 			[TYPE_SHORT] = function(buf, idx)
-				local ll, lh = byte(buf, idx, idx + 1)
-				return ll + shl(lh, 8), 2
+				local lo, hi = byte(buf, idx, idx + 1)
+				return b2w(lo, hi), 2
 			end,
 			[TYPE_INT] = function(buf, idx)
 				local n = b2dw(byte(buf, idx, idx + 3))
 				return n < 0 and 0x100000000 + n or n, 4
 			end,
 			[TYPE_LONG] = function(buf, idx)
-				return 0
+				local lll, llh, lhl, lhh, hll, hlh, hhl, hhh = byte(buf, idx, idx + 7)
+				return d2q(b2dw(lll, llh, lhl, lhh), b2dw(hll, hlh, hhl, hhh)), 8
 			end,
-			[TYPE_NUM] = IEEE754 and function(buf, idx)
-				local ll, m, e = byte(buf, idx, idx + 2)
-				m, e = b2dw(ll, m, e, 0), byte(buf, idx + 3, idx + 3)
-				return ldexp(m * UNPRECISION, e), 4
-			end or function(buf, idx)
-				local ll, lh, hl = byte(buf, idx + 4, idx + 6)
-				return b2dw(byte(buf, idx, idx + 3)) + (ll + shl(lh, 8) + shl(hl, 16)) * UNPRECISION, 7
-			end,
+			[TYPE_FLT] = float,
+			[TYPE_DBL] = double,
 			[TYPE_NBYTE] = function(buf, idx)
 				return -byte(buf, idx), 1
 			end,
 			[TYPE_NSHORT] = function(buf, idx)
-				local ll, lh = byte(buf, idx, idx + 1)
-				return -(ll + shl(lh, 8)), 2
+				local lo, hi = byte(buf, idx, idx + 1)
+				return -b2w(lo, hi), 2
 			end,
 			[TYPE_NINT] = function(buf, idx)
 				local n = b2dw(byte(buf, idx, idx + 3))
 				return -(n < 0 and (0x100000000 + n) or n), 4
 			end,
 			[TYPE_NLONG] = function(buf, idx)
-				return -0
+				local lll, llh, lhl, lhh, hll, hlh, hhl, hhh = byte(buf, idx, idx + 7)
+				return -d2q(b2dw(lll, llh, lhl, lhh), b2dw(hll, hlh, hhl, hhh)), 8
 			end,
-			[TYPE_NNUM] = IEEE754 and function(buf, idx)
-				local ll, m, e = byte(buf, idx, idx + 2)
-				m, e = b2dw(ll, m, e, 0), byte(buf, idx + 3, idx + 3)
-				return -ldexp(m * UNPRECISION, e), 4
-			end or function(buf, idx)
-				local ll, lh, hl = byte(buf, idx + 4, idx + 6)
-				return -(b2dw(byte(buf, idx, idx + 3)) + (ll + shl(lh, 8) + shl(hl, 16)) * UNPRECISION), 7
+			[TYPE_NFLT] = function(buf, idx)
+				return -float(buf, idx), 4
+			end,
+			[TYPE_NDBL] = function(buf, idx)
+				return -double(buf, idx), 8
 			end,
 			[TYPE_STR] = SZT and function(buf, idx)
 				local nul = find(buf, '\0', idx, true)
@@ -394,11 +412,11 @@ local deserial do
 				local out, tt = {}
 
 				tt, idx = byte(buf, idx), idx + 1
-				if (tt == 12) then
+				if (tt and tt == 12) then
 					local l = 1
 					::retry::
 					tt, idx = byte(buf, idx), idx + 1
-					if (tt and tt ~= 255) then
+					if (tt ~= 255) then
 						local fn = deserials[tt]
 						if (fn) then
 							local dat, len = fn(buf, idx)
@@ -411,10 +429,10 @@ local deserial do
 				end
 
 				tt, idx = byte(buf, idx), idx + 1
-				if (tt == 13) then
+				if (tt and tt == 13) then
 					::retry::
 					tt, idx = byte(buf, idx), idx + 1
-					if (tt and tt ~= 255) then
+					if (tt ~= 255) then
 						local fn = deserials[tt]
 						if (fn) then
 							local k, len = fn(buf, idx)
