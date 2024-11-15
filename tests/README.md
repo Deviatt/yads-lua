@@ -2,8 +2,8 @@
 #### JIT: ON SSE3 SSE4.1 BMI2 fold cse dce fwd dse narrow loop abc sink fuse
 | Serializer                                        | sum      | avg      | med      | size
 | ------------------------------------------------- | -------- | -------- | -------- | --
-| yads serial                                       | 0.783000 | 0.078300 | 0.078000 | 68
-| yads de/serial                                    | 1.398000 | 0.139800 | 0.139000 | --
+| yads serial                                       | 0.870000 | 0.087000 | 0.087000 | 76
+| yads de/serial                                    | 1.503000 | 0.150300 | 0.150500 | --
 | [von](https://github.com/vercas/vON) serial       | 2.738000 | 0.273800 | 0.274000 | 90
 | [von](https://github.com/vercas/vON) de/serial    | 6.545000 | 0.654500 | 0.655000 | --
 | [json](https://github.com/rxi/json.lua) serial    | 2.703000 | 0.270300 | 0.271000 | 97
@@ -14,8 +14,8 @@
 #### JIT: ON SSE3 SSE4.1 BMI2
 | Serializer                                        | sum      | avg      | med      | size
 | ------------------------------------------------- | -------- | -------- | -------- | --
-| yads serial                                       | 1.107000 | 0.110700 | 0.110500 | 68
-| yads de/serial                                    | 1.883000 | 0.188300 | 0.188500 | --
+| yads serial                                       | 1.230000 | 0.123000 | 0.123500 | 76
+| yads de/serial                                    | 2.096000 | 0.209600 | 0.209000 | --
 | [von](https://github.com/vercas/vON) serial       | 2.796000 | 0.279600 | 0.280500 | 90
 | [von](https://github.com/vercas/vON) de/serial    | 6.773000 | 0.677300 | 0.679000 | --
 | [json](https://github.com/rxi/json.lua) serial    | 2.509000 | 0.250900 | 0.252500 | 97
@@ -26,8 +26,8 @@
 #### JIT: OFF SSE3 SSE4.1 BMI2
 | Serializer                                        | sum       | avg      | med      | size
 | ------------------------------------------------- | --------- | -------- | -------- | --
-| yads serial                                       | 2.163000  | 0.216300 | 0.218000 | 68
-| yads de/serial                                    | 4.279000  | 0.353900 | 0.355500 | --
+| yads serial                                       | 2.938000  | 0.293800 | 0.296500 | 76
+| yads de/serial                                    | 5.078000  | 0.507800 | 0.511000 | --
 | [von](https://github.com/vercas/vON) serial       | 3.539000  | 0.279600 | 0.280500 | 90
 | [von](https://github.com/vercas/vON) de/serial    | 9.367000  | 0.936700 | 0.944500 | --
 | [json](https://github.com/rxi/json.lua) serial    | 3.939000  | 0.393900 | 0.387000 | 97
@@ -38,8 +38,8 @@
 ## Lua 5.4
 | Serializer                                        | sum       | avg      | med      | size
 | ------------------------------------------------- | --------- | -------- | -------- | --
-| yads serial                                       | 4.350000  | 0.435000 | 0.438500 | 68
-| yads de/serial                                    | 8.978000  | 0.897800 | 0.905500 | --
+| yads serial                                       | 5.604000  | 0.560400 | 0.557000 | 76
+| yads de/serial                                    | 10.510000 | 1.051000 | 1.050000 | --
 | [von](https://github.com/vercas/vON) serial       | 9.385000  | 0.938500 | 0.942500 | 90
 | [von](https://github.com/vercas/vON) de/serial    | 21.409000 | 2.140900 | 2.148000 | --
 | [json](https://github.com/rxi/json.lua) serial    | 11.091000 | 1.109100 | 1.117500 | 97

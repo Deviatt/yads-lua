@@ -1,6 +1,6 @@
 --[[
 Yet Another Data Serializer - Fast and compact lua serializer
-Copyright (C) 2024 Deviatt
+Copyright (C) 2024 - 2025 Deviatt
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -64,6 +64,46 @@ end
 
 local floor, ceil = math.floor, math.ceil
 local serial do
+	local typeid do
+		local getmt = getmetatable
+
+		local types do
+			local setmt = debug.setmetatable
+
+			local NIL = getmt(nil) or {}
+			setmt(nil, NIL)
+
+			local BOOL = getmt(true) or {}
+			setmt(true, BOOL)
+
+			local NUM = getmt(0) or {}
+			setmt(0, NUM)
+
+			local coro = coroutine.create(function() end)
+			local THREAD = getmt(coro) or {}
+			setmt(coro, THREAD)
+
+			local STR = getmt('')
+
+			local FUNC = getmt(q2d) or {}
+			setmt(q2d, FUNC)
+
+			types = {
+				[NIL] 		= 0,
+				[BOOL] 		= 1,
+				[NUM]		= 2,
+				[STR]		= 3,
+				[THREAD] 	= 5,
+				[FUNC]		= 6
+			}
+		end
+
+		function typeid(x)
+			local mt = getmt(x)
+			return types[mt] or 4
+		end
+	end
+
 	local buf = {}
 	local serials do
 		local abs, log = math.abs, math.log
@@ -71,10 +111,11 @@ local serial do
 			if (jit) then
 				function frexp(x)
 					if (x == 0) then return 0.0, 0.0 end
-					local e = floor(log(abs(x), 2))
-					x = x / shl(1, e)
+					x = abs(x)
+					local e = floor(log(x, 2))
+					x = x / 2 ^ e
 
-					if (abs(x) >= 1) then
+					if (x >= 1) then
 						x, e = x * .5, e + 1
 					end
 
@@ -101,8 +142,7 @@ local serial do
 			)
 		end
 
-		--> NOTE 1: This method hasn't been thoroughly tested and may produce undefined behavior!!!
-		--> NOTE 2: There maybe memory risks, although none have been detected at this time.
+		--> NOTE 1: There maybe memory risks, although none have been detected at this time.
 		local lookup do
 			local function byte(x)
 				return char(x)
@@ -130,7 +170,7 @@ local serial do
 				return '\0'
 			end
 
-			local lookat = setmetatable({
+			local lut = setmetatable({
 				[00] = byte,	[01] = byte,	[02] = byte,	[03] = byte,
 				[04] = byte,	[05] = byte,	[06] = byte,	[07] = byte,
 				[08] = word,	[09] = word,	[10] = word,	[11] = word,
@@ -153,12 +193,11 @@ local serial do
 				end
 			})
 
-			--> Index misses hurt performance!
 			lookup = setmetatable({
 				[0] = '\0'
 			}, {
 				__index = function(self, x)
-					local y = lookat[floor(log(x, 2))](x)
+					local y = lut[floor(log(x, 2))](x)
 					self[x] = y
 					return y
 				end
@@ -169,39 +208,33 @@ local serial do
 			[0] = TYPE_NIL,
 			[1] = TYPE_BYTE,
 			[2] = TYPE_SHORT,
+			[3] = TYPE_NIL,
 			[4] = TYPE_INT,
+			[5] = TYPE_NIL,
+			[6] = TYPE_NIL,
+			[7] = TYPE_NIL,
 			[8] = TYPE_LONG
 		}
 
-		local next, type, strfmt = next, type, string.format
+		local next, strfmt = next, string.format
 		serials = {
-			["nil"] = function(x, idx)
+			[0] = function(x, idx)
 				buf[idx] = char(TYPE_NIL)
 				return idx + 1
 			end,
-			["boolean"] = function(x, idx)
+			[1] = function(x, idx)
 				buf[idx] = char(x and TYPE_TRUE or TYPE_FALSE)
 				return idx + 1
 			end,
-			["string"] = SZT and function(x, idx)
-				if (byte(x, -1) ~= 0) then
-					x = x..'\0'
-				end
-
-				buf[idx] = char(TYPE_STR)..x
-				return idx + 1
-			end or function(x, idx)
-				buf[idx] = strfmt("%c%s%s", TYPE_STR, lookup[#x], x)
-				return idx + 1
-			end,
-			["number"] = function(x, idx)
+			[2] = function(x, idx)
 				local y, tt = 0, 0
 				if (x % 1 == 0) then
 					y = lookup[abs(x)]
 					tt = ntypes[#y]
 				else
 					tt = TYPE_FLT
-					local m, e = frexp(abs(x))
+					local m, e = frexp(x)
+					m = abs(m)
 					y = m * 1e7
 					if (y % 1 == 0) then
 						y = singlef(y, e)
@@ -218,7 +251,18 @@ local serial do
 				buf[idx] = char(tt)..y
 				return idx + 1
 			end,
-			["table"] = function(x, idx)
+			[3] = SZT and function(x, idx)
+				if (byte(x, -1) ~= 0) then
+					x = x..'\0'
+				end
+
+				buf[idx] = char(TYPE_STR)..x
+				return idx + 1
+			end or function(x, idx)
+				buf[idx] = strfmt("%c%s%s", TYPE_STR, lookup[#x], x)
+				return idx + 1
+			end,
+			[4] = function(x, idx)
 				local len = #x
 				local isarr = len ~= 0
 				local k, v = next(x, isarr and len or nil)
@@ -230,7 +274,7 @@ local serial do
 					buf[idx], idx = char(TYPE_APART), idx + 1
 					for i = 1, len do
 						local y = x[i]
-						local fn = serials[type(y)]
+						local fn = serials[typeid(y)]
 						if (fn and x ~= y) then
 							idx = fn(y, idx)
 						end
@@ -243,11 +287,11 @@ local serial do
 					buf[idx], idx = char(TYPE_HPART), idx + 1
 
 					::retry::
-					local fn = serials[type(k)]
+					local fn = serials[typeid(k)]
 					if (fn and x ~= k and x ~= v) then
 						idx = fn(k, idx)
 
-						fn = serials[type(v)]
+						fn = serials[typeid(v)]
 						if (fn) then
 							idx = fn(v, idx)
 						end
@@ -264,15 +308,15 @@ local serial do
 		}
 	end
 
-	local tconcat = table.concat
+	local tabcat = table.concat
 	function serial(x)
 		local idx = 1
-		local fn = serials[type(x)]
+		local fn = serials[typeid(x)]
 		if (fn) then
 			idx = fn(x, idx)
 		end
 
-		return tconcat(buf, '', 1, idx - 1)
+		return tabcat(buf, '', 1, idx - 1)
 	end
 end
 
@@ -298,17 +342,25 @@ local deserial do
 			end
 		end
 
+		local function signedByte(x)
+			return x > 127 and -(0x100 - x) or x
+		end
+
 		local ldexp = math.ldexp
 		local function float(buf, idx)
 			local ll, m, e = byte(buf, idx, idx + 2)
-			m, e = b2dw(ll, m, e, 0), byte(buf, idx + 3, idx + 3)
+			m, e = b2dw(ll, m, e, 0), signedByte(byte(buf, idx + 3, idx + 3))
 			return ldexp(m * 1e-7, e), 4
+		end
+
+		local function signedShort(x)
+			return x > 32767 and -(0x10000 - x) or x
 		end
 
 		local function double(buf, idx)
 			local lo, hi, lhl, lhh, hll, hlh = byte(buf, idx, idx + 5)
 			lo, hi = b2dw(lo, hi, lhl, lhh), b2w(hll, hlh)
-			return ldexp(d2q(lo, hi) * 1e-14, b2w(byte(buf, idx + 6, idx + 7))), 8
+			return ldexp(d2q(lo, hi) * 1e-14, signedShort(b2w(byte(buf, idx + 6, idx + 7)))), 8
 		end
 
 		deserials = {
@@ -412,7 +464,7 @@ local deserial do
 				local out, tt = {}
 
 				tt, idx = byte(buf, idx), idx + 1
-				if (tt and tt == 12) then
+				if (tt and tt == TYPE_APART) then
 					local l = 1
 					::retry::
 					tt, idx = byte(buf, idx), idx + 1
@@ -429,7 +481,7 @@ local deserial do
 				end
 
 				tt, idx = byte(buf, idx), idx + 1
-				if (tt and tt == 13) then
+				if (tt and tt == TYPE_HPART) then
 					::retry::
 					tt, idx = byte(buf, idx), idx + 1
 					if (tt ~= 255) then
